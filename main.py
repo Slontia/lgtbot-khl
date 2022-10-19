@@ -1,6 +1,7 @@
 # for async
 import asyncio
 import nest_asyncio
+import threading
 
 # for flags
 import gflags
@@ -30,18 +31,12 @@ bot = Bot(token=gflags.FLAGS.token)
 
 @bot.on_message()
 async def on_message(msg: Message):
+    # We must start a new thread to handle the request. Otherwise, the coroutine may be stucked at a match lock,
+    # and the other thread holding the match lock may be stucked at waiting the future.
     if msg.channel_type == ChannelPrivacyTypes.PERSON: # private message
-        lgtbot_kook.on_private_message(msg.content, msg.author_id)
-    elif bot.me.id in msg.extra.get('mention'):
-        lgtbot_kook.on_public_message(msg.content.replace(f'(met){bot.me.id}(met)', ''), msg.author_id, msg.target_id)
-
-
-def get_user_name(uid: str):
-    try:
-        return asyncio.get_event_loop().run_until_complete(bot.client.fetch_user(uid)).nickname
-    except Exception as e:
-        print(e)
-        return ""
+        threading.Thread(target=lgtbot_kook.on_private_message, args=(msg.content, msg.author_id,)).start()
+    elif bot.me.id in msg.extra.get('mention'): # public message where the bot is mentioned
+        threading.Thread(target=lgtbot_kook.on_public_message, args=(msg.content.replace(f'(met){bot.me.id}(met)', ''), msg.author_id, msg.target_id,)).start()
 
 
 async def send_message_async(id: str, is_uid: bool, msg: str, type: MessageTypes):
@@ -54,18 +49,26 @@ async def send_image_message_async(id: str, is_uid: bool, image: str):
     await send_message_async(id, is_uid, url, MessageTypes.IMG)
 
 
-def send_text_message(id: str, is_uid: bool, msg: str):
+def sync_exec(func, *args):
     try:
-        asyncio.get_event_loop().run_until_complete(send_message_async(id, is_uid, msg, MessageTypes.KMD))
+        if bot.loop._thread_id == threading.current_thread().ident:
+            return asyncio.run_until_complete(func(*args), bot.loop)
+        else:
+            return asyncio.run_coroutine_threadsafe(func(*args), bot.loop).result()
     except Exception as e:
         print(e)
+
+
+def get_user_name(uid: str):
+    return sync_exec(bot.client.fetch_user, uid).nickname
+
+
+def send_text_message(id: str, is_uid: bool, msg: str):
+    sync_exec(send_message_async, id, is_uid, msg, MessageTypes.KMD)
 
 
 def send_image_message(id: str, is_uid: bool, msg: str):
-    try:
-        asyncio.get_event_loop().run_until_complete(send_image_message_async(id, is_uid, msg))
-    except Exception as e:
-        print(e)
+    sync_exec(send_image_message_async,id, is_uid, msg)
 
 
 async def make_lgtbot(bot: Bot):
