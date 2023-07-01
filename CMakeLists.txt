@@ -11,12 +11,14 @@ if(MSVC)
     message(STATUS "optional: /UTF-8")
 endif(MSVC)
 
+find_package(CURL REQUIRED)
+
 add_library(lgtbot_kook SHARED ${CMAKE_CURRENT_SOURCE_DIR}/lgtbot_kook.cc)
 set_target_properties(lgtbot_kook PROPERTIES PREFIX "") # prevent prepending 'lib' to library names
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lgtbot /usr/include/python3.6m)
 
-target_link_libraries(lgtbot_kook PRIVATE gflags bot_core python3.6m boost_python3)
+target_link_libraries(lgtbot_kook PRIVATE gflags bot_core python3.6m boost_python3 ${CURL_LIBRARIES})
 
 add_dependencies(lgtbot_kook bot_core)
 

@@ -12,6 +12,9 @@ from khl import Bot, Message, MessageTypes, ChannelPrivacyTypes
 import lgtbot_kook
 import logging
 
+# for listen ctrl-c
+import signal
+
 logging.basicConfig(level='INFO')
 
 # C++ code will invoke Python methods which should not be async. In this case, we need use
@@ -23,8 +26,9 @@ nest_asyncio.apply()
 gflags.DEFINE_string('token', '', 'token for Kook robot')
 gflags.DEFINE_string('admin_uids', '', 'administrator user id list (splitted by \',\')')
 gflags.DEFINE_string('game_path', './plugins', 'the path of game modules')
-gflags.DEFINE_string('image_path', './images', 'the path of image modules')
 gflags.DEFINE_string('db_path', './lgtbot_data.db', 'the path of database')
+gflags.DEFINE_string('conf_path', '', 'the path of the configuration')
+gflags.DEFINE_string('image_path', './images', 'the path of image modules')
 
 gflags.FLAGS(sys.argv)
 bot = Bot(token=gflags.FLAGS.token)
@@ -62,6 +66,8 @@ def sync_exec(func, *args):
 def get_user_name(uid: str):
     return sync_exec(bot.client.fetch_user, uid).nickname
 
+def get_user_avatar_url(uid: str):
+    return sync_exec(bot.client.fetch_user, uid).avatar
 
 def send_text_message(id: str, is_uid: bool, msg: str):
     sync_exec(send_message_async, id, is_uid, msg, MessageTypes.KMD)
@@ -70,12 +76,16 @@ def send_text_message(id: str, is_uid: bool, msg: str):
 def send_image_message(id: str, is_uid: bool, msg: str):
     sync_exec(send_image_message_async,id, is_uid, msg)
 
+if not lgtbot_kook.start(gflags.FLAGS.game_path, gflags.FLAGS.db_path, gflags.FLAGS.conf_path, gflags.FLAGS.image_path, gflags.FLAGS.admin_uids, get_user_name, get_user_avatar_url, send_text_message, send_image_message):
+    sys.exit(1)
 
-async def make_lgtbot(bot: Bot):
-    lgtbot_kook.start((await bot.client.fetch_me()).id, gflags.FLAGS.game_path, gflags.FLAGS.image_path, gflags.FLAGS.admin_uids, gflags.FLAGS.db_path, get_user_name, send_text_message, send_image_message)
+def sigint_handler(signum, frame):
+    if lgtbot_kook.release_bot_if_not_processing_games():
+        sys.exit(0)
+    else:
+        print("There are processing games, please retry later or force exit by kill -9.");
 
-
-bot.on_startup(make_lgtbot)
+signal.signal(signal.SIGINT, sigint_handler)
 
 # everything done, go ahead now!
 bot.run()
